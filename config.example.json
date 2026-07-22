@@ -1,0 +1,18 @@
+{
+  "createdBy": "seu-email@artia.com",
+  "authorMatch": ["seu-email@artia.com", "Seu Nome", "seunome"],
+  "defaults": {
+    "startTime": "09:00",
+    "timeEntryStatusId": 4,
+    "kindOfHours": "normal",
+    "gapMinutes": 90,
+    "warmupMinutes": 30
+  },
+  "repos": {
+    "/caminho/absoluto/do/repo": {
+      "organizationId": 1,
+      "accountId": 0,
+      "folderId": 0
+    }
+  }
+}
