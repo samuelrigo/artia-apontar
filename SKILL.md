@@ -23,15 +23,32 @@ Estrutura: `createdBy`, `authorMatch` (lista de nomes/emails do autor no git log
 `warmupMinutes`), `repos` (mapa `caminho_absoluto -> {organizationId, accountId,
 folderId}`). Exemplo em `config.example.json` deste diretório.
 
-Se `accountId`/`folderId` de algum repo estiverem `null`: pare e peça pro usuário
-descobrir com:
-```
-python3 artia.py projects --account <ID_DO_GRUPO_DE_TRABALHO>
-python3 artia.py folders  --account <ID_DO_GRUPO_DE_TRABALHO>
-```
-(o `accountId` do grupo de trabalho o usuário já sabe de uso normal do Artia —
-aparece na URL do app; não existe endpoint na API pra "listar meus grupos de
-trabalho"). Depois de descoberto, edite `~/.config/artia/config.json` direto.
+**Todo comando abaixo precisa de `--org <organizationId>`** (o organizationId
+do repo, do config). Sem isso, `artia.py` usa o default `1` — quase certamente
+errado — e a API retorna erros confusos tipo `"Comunidade desconhecida"` ou
+`"Organização não encontrada"` mesmo com accountId/folderId corretos. Já
+aconteceu nessa mesma sessão de desenvolvimento; não repita.
+
+Se `organizationId`/`accountId`/`folderId` de algum repo estiverem `null`: pare
+e peça pro usuário descobrir:
+- `organizationId`: aparece na URL do próprio perfil do usuário no Artia —
+  `https://app.artia.com/users/edit?organization_id=<ESSE_NÚMERO>`.
+- `accountId` (grupo de trabalho): aparece na URL de qualquer atividade —
+  `https://app.artia.com/a/<accountId>/f/<folderId>/activities/<activityId>`.
+- `folderId`: com organizationId e accountId em mãos, rode
+  `python3 artia.py --org <organizationId> folders --account <accountId>` (ou
+  `projects --account <accountId>` — "Projetos" costuma ser o nível certo pra
+  `folderId` de `listingActivities`, "Pastas" pode ser um nível acima sem
+  atividades diretas).
+
+Depois de descoberto, edite `~/.config/artia/config.json` direto.
+
+`defaults.timeEntryStatusId` é o status de workflow/aprovação do apontamento
+(ex: "Em validação", "Aprovado") — não é customizável por `listingCustomStatus`
+com filtro `statusObject: "TimeEntry"` direto (retorna vazio mesmo quando o id
+certo existe). Jeito confiável de achar o valor certo: peça pro usuário criar
+1 apontamento manual pela UI do Artia, depois rode `time-entries` pra essa
+atividade/data e leia o `timeEntryStatusId` que veio de verdade.
 
 ## 1. Credenciais
 
@@ -76,9 +93,9 @@ Isso é **estimativa de partida** — o usuário edita os números no passo 6.
 
 ## 5. Resolução da atividade (match por título)
 
-Para cada grupo (repo já resolve `accountId`/`folderId` via config):
+Para cada grupo (repo já resolve `organizationId`/`accountId`/`folderId` via config):
 ```
-python3 artia.py activities --folder <folderId> --account <accountId> --mine
+python3 artia.py --org <organizationId> activities --folder <folderId> --account <accountId> --mine
 ```
 Normalize (minúsculas, sem acento) o nome da branch (sem prefixo `feat/`,
 trocando `-`/`_` por espaço) e os assuntos dos commits do grupo. Compare por
@@ -88,14 +105,17 @@ muito próximos): deixe as 3 visíveis na tabela pro usuário escolher.
 
 ## 6. Dedupe + tabela de proposta
 
-Antes de mostrar, para cada `(activityId, data)` candidato à linha 1 (melhor
-match), rode:
+Antes de mostrar, rode dedupe contra as **3 candidatas** do grupo (não só a
+top-1) — se o match errar a atividade certa, checar só a top-1 deixa passar
+duplicata numa atividade diferente da que já tem entrada real:
 ```
-python3 artia.py time-entries --account <accountId> --activity <activityId> --date <data>
+python3 artia.py --org <organizationId> time-entries --account <accountId> --folder <folderId> --activity <activityId> --date <data>
 ```
-Se já existir entrada nesse dia pra essa atividade, marque a linha como **já
-apontado** (mostra o `id`/`duration` existente) — não proponha criar de novo
-a menos que o usuário peça explicitamente.
+Se **qualquer uma** das 3 já tiver entrada nesse dia: marque a linha como **já
+apontado** (mostra `id`/`duration`/qual atividade já tem), e trate isso como
+sinal extra de qual candidata é a certa (se foi a #2 ou #3 que já tinha
+entrada, é forte indício de que o match top-1 errou). Não proponha criar de
+novo a menos que o usuário peça explicitamente.
 
 Monte e mostre uma tabela markdown:
 
@@ -107,6 +127,11 @@ Monte e mostre uma tabela markdown:
 
 Peça pro usuário revisar: pode trocar a atividade escolhida (entre as
 candidatas ou outro id), ajustar horas, editar observação, remover linhas.
+
+**Se o usuário trocar a atividade de alguma linha, refaça o dedupe do passo 6
+pra essa nova `(activityId, data)` antes de seguir** — o cheque anterior foi
+feito só pra atividade top-1 original, não cobre a troca.
+
 **Só prossiga para o passo 8 depois de uma confirmação explícita** ("pode
 postar", "confirma", etc). Em modo `--dry-run`, pare aqui.
 
@@ -114,7 +139,7 @@ postar", "confirma", etc). Em modo `--dry-run`, pare aqui.
 
 Por linha confirmada:
 ```
-python3 artia.py create-entry --account <accountId> --activity <activityId> \
+python3 artia.py --org <organizationId> create-entry --account <accountId> --activity <activityId> \
   --date <data> --start <defaults.startTime> --duration <horas> \
   --status <defaults.timeEntryStatusId> --by <createdBy> --kind normal \
   --obs "<observação>" --yes
@@ -130,7 +155,9 @@ também — trate um erro de API/gravação aqui como qualquer outro bug do dia 
 ## Referência rápida da API (GraphQL, `https://api.artia.com/graphql`)
 
 Toda request autenticada leva `Authorization: Bearer <token>` +
-`OrganizationId: <organizationId>` — `artia.py` já cuida disso.
+`OrganizationId: <organizationId>`. `artia.py` monta esse header sozinho, mas
+só com o valor certo se você passar `--org <organizationId>` — sem isso ele
+usa um default (`1`) que raramente é o organizationId real do usuário.
 
 - `authenticationByEmail(email, password){ token }`
 - `listingProjects(accountId){ id, name, status, costCenterId }`

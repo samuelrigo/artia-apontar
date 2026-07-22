@@ -19,8 +19,10 @@ pra você revisar/ajustar antes de mandar pro Artia.
 
 1. Lê `git log` dos repositórios configurados, no período pedido
 2. Agrupa commits por `(repositório, dia, branch)`
-3. Estima horas por sessão de trabalho (quebra a sessão quando o intervalo
-   entre commits passa de um limite configurável)
+3. Estima horas por sessão de trabalho: quebra em sessão nova quando o
+   intervalo entre commits passa de um limite configurável (`gapMinutes`),
+   soma a duração de cada sessão + um tempo de "aquecimento" (`warmupMinutes`)
+   pra compensar o trabalho antes do primeiro commit
 4. Busca as atividades do projeto no Artia e casa cada grupo com a atividade
    de título mais parecido (top-3 candidatas, sem decidir sozinho em caso de
    empate)
@@ -49,11 +51,24 @@ Edite `~/.config/artia/config.json`:
 
 - `authorMatch`: nomes/emails que aparecem no seu `git log` como autor
 - `repos`: caminho absoluto de cada repositório → `organizationId`,
-  `accountId` (grupo de trabalho no Artia — aparece na URL do app) e
-  `folderId` (descubra rodando `python3 artia.py folders --account <ID>`)
-- `defaults.timeEntryStatusId`: confira qual é o status correto pro seu fluxo
-  (crie um apontamento manual na UI do Artia e olhe o campo
-  `timeEntryStatusId` dele via `artia.py time-entries`)
+  `accountId`, `folderId`:
+  - `organizationId`: aparece na URL do seu perfil no Artia —
+    `https://app.artia.com/users/edit?organization_id=<ESSE_NÚMERO>`
+  - `accountId` (grupo de trabalho): aparece na URL de qualquer atividade —
+    `https://app.artia.com/a/<accountId>/f/<folderId>/activities/<activityId>`
+  - `folderId`: com os dois acima, rode
+    `python3 artia.py --org <organizationId> projects --account <accountId>`
+    (ou `folders`) e pegue o `id` do projeto certo
+- `defaults.timeEntryStatusId`: **não** é customizável via `listingCustomStatus`
+  (filtro `statusObject: "TimeEntry"` não retorna nada mesmo quando o id certo
+  existe). Descubra criando 1 apontamento manual na UI do Artia e lendo o
+  `timeEntryStatusId` dele de volta:
+  `python3 artia.py --org <organizationId> time-entries --account <accountId> --activity <ID>`
+
+**Todo comando de `artia.py` precisa de `--org <organizationId>` antes do
+subcomando** — sem isso ele usa um default (`1`) quase certamente errado, e a
+API responde com erros pouco óbvios (`"Comunidade desconhecida"`,
+`"Organização não encontrada"`) mesmo com `accountId`/`folderId` certos.
 
 Exporte suas credenciais do Artia (nunca ficam salvas em arquivo, só em
 variável de ambiente):
@@ -82,14 +97,14 @@ panos, mas que também funciona sozinho:
 
 ```
 python3 artia.py login
-python3 artia.py whoami
-python3 artia.py projects --account <ID>
-python3 artia.py folders --account <ID>
-python3 artia.py activities --folder <ID> --mine
-python3 artia.py time-entries --account <ID> --activity <ID> --date 2026-07-22
-python3 artia.py create-entry --account <ID> --activity <ID> --date 2026-07-22 \
+python3 artia.py --org <ORG_ID> whoami
+python3 artia.py --org <ORG_ID> projects --account <ID>
+python3 artia.py --org <ORG_ID> folders --account <ID>
+python3 artia.py --org <ORG_ID> activities --folder <ID> --account <ID> --mine
+python3 artia.py --org <ORG_ID> time-entries --account <ID> --activity <ID> --date 2026-07-22
+python3 artia.py --org <ORG_ID> create-entry --account <ID> --activity <ID> --date 2026-07-22 \
   --start 09:00 --duration 1.5 --status <ID> --obs "..."   # sem --yes = dry-run
-python3 artia.py raw --query '...'   # qualquer query/mutation GraphQL
+python3 artia.py --org <ORG_ID> raw --query '...'   # qualquer query/mutation GraphQL
 ```
 
 ## Segurança
