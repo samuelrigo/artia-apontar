@@ -48,7 +48,15 @@ def esc(s):
 
 
 def gql(query, token=None, org_id=None):
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        # Cloudflare bloqueia (403 / error 1010) o User-Agent default do
+        # urllib ("Python-urllib/x.y"); um UA de browser passa.
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
         headers["OrganizationId"] = str(org_id or DEFAULT_ORG)
