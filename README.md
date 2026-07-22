@@ -1,7 +1,7 @@
 # artia-apontar
 
 Skill do [Claude Code](https://claude.com/claude-code) que lê seus commits do
-git, agrupa por tarefa/dia, estima horas trabalhadas e cria os apontamentos
+git, descobre em qual tarefa você trabalhou cada dia e cria os apontamentos
 correspondentes no [Artia](https://artia.com) — sempre te mostrando uma tabela
 de revisão e pedindo confirmação antes de gravar qualquer coisa.
 
@@ -18,15 +18,21 @@ pra você revisar/ajustar antes de mandar pro Artia.
 ## Como funciona
 
 1. Lê `git log` dos repositórios configurados, no período pedido
-2. Agrupa commits por `(repositório, dia, branch)`
-3. Estima horas por sessão de trabalho: quebra em sessão nova quando o
-   intervalo entre commits passa de um limite configurável (`gapMinutes`),
-   soma a duração de cada sessão + um tempo de "aquecimento" (`warmupMinutes`)
-   pra compensar o trabalho antes do primeiro commit
-4. Busca as atividades do projeto no Artia e casa cada grupo com a atividade
+2. Agrupa commits por `(repositório, branch)` — não por dia isolado, já que
+   commit pode ser raro e passar dias entre um e outro na mesma tarefa
+3. Busca as atividades do projeto no Artia e casa cada branch com a atividade
    de título mais parecido (top-3 candidatas, sem decidir sozinho em caso de
    empate)
-5. Verifica se já existe apontamento naquele dia pra não duplicar
+4. Preenche o calendário em **dias inteiros** (`dailyHours`, padrão 8h), não
+   por sessão de commit:
+   - 1 tarefa com commit no dia → dia inteiro nela
+   - 2 tarefas com commit no mesmo dia → manhã inteira numa, tarde inteira
+     na outra
+   - dia sem commit nenhum, mas entre dois dias de commit da mesma tarefa →
+     preenche com a mesma tarefa (você trabalhou, só não commitou naquele dia)
+   - fim de semana, ou gap ambíguo entre tarefas diferentes → não propõe nada
+5. Verifica se já existe apontamento naquele dia (nas 3 candidatas, não só a
+   escolhida) pra não duplicar
 6. Mostra uma tabela markdown pra você revisar e editar
 7. Só cria os apontamentos (`createTimeEntry`) depois da sua confirmação
    explícita
@@ -59,6 +65,8 @@ Edite `~/.config/artia/config.json`:
   - `folderId`: com os dois acima, rode
     `python3 artia.py --org <organizationId> projects --account <accountId>`
     (ou `folders`) e pegue o `id` do projeto certo
+- `defaults.dailyHours`/`morningStart`/`afternoonStart`: jornada padrão (8h,
+  09:00, 13:00) usada pra preencher os dias — ajuste pro seu horário real
 - `defaults.timeEntryStatusId`: **não** é customizável via `listingCustomStatus`
   (filtro `statusObject: "TimeEntry"` não retorna nada mesmo quando o id certo
   existe). Descubra criando 1 apontamento manual na UI do Artia e lendo o

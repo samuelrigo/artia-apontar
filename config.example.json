@@ -2,11 +2,11 @@
   "createdBy": "seu-email@artia.com",
   "authorMatch": ["seu-email@artia.com", "Seu Nome", "seunome"],
   "defaults": {
-    "startTime": "09:00",
+    "dailyHours": 8,
+    "morningStart": "09:00",
+    "afternoonStart": "13:00",
     "timeEntryStatusId": 4,
-    "kindOfHours": "normal",
-    "gapMinutes": 90,
-    "warmupMinutes": 30
+    "kindOfHours": "normal"
   },
   "repos": {
     "/caminho/absoluto/do/repo": {

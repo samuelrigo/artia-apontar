@@ -19,8 +19,8 @@ não contorne isso.
 
 Lê `~/.config/artia/config.json` (fora de qualquer repo git, nunca commitado).
 Estrutura: `createdBy`, `authorMatch` (lista de nomes/emails do autor no git log),
-`defaults` (`startTime`, `timeEntryStatusId`, `kindOfHours`, `gapMinutes`,
-`warmupMinutes`), `repos` (mapa `caminho_absoluto -> {organizationId, accountId,
+`defaults` (`dailyHours`, `morningStart`, `afternoonStart`, `timeEntryStatusId`,
+`kindOfHours`), `repos` (mapa `caminho_absoluto -> {organizationId, accountId,
 folderId}`). Exemplo em `config.example.json` deste diretório.
 
 **Todo comando abaixo precisa de `--org <organizationId>`** (o organizationId
@@ -70,30 +70,25 @@ prossiga sem elas.
 - `--dry-run`: roda tudo, mostra a tabela, mas nunca chega a perguntar
   confirmação de postagem (fica implícito que não posta).
 
-## 3. Coleta de commits
+## 3. Coleta de commits e intervalo de cada tarefa
 
 Por repo, autor batendo com `authorMatch`:
 ```
-git -C <repo> log --since=<...> --until=<...> --date=iso-strict \
-  --pretty='%H|%cI|%D|%s' --author='<regex dos authorMatch, OR-separado>'
+git -C <repo> log --since=<...> --until=<...> --date=short \
+  --pretty='%H|%ad|%D|%s' --author='<regex dos authorMatch, OR-separado>'
 ```
-Agrupe por `(repo, dia, branch)`. Branch vem de `%D` (ref-names) quando
-presente; senão usa a branch atual do repo (`git branch --show-current`) como
-fallback — é heurística, o usuário revisa/corrige na tabela do passo 6.
+Agrupe por `(repo, branch)` — **não** por dia isolado (commit é raro e pode
+passar dias entre um e outro na mesma tarefa). Branch vem de `%D` (ref-names)
+quando presente; senão usa a branch atual do repo (`git branch --show-current`)
+como fallback — é heurística, o usuário revisa/corrige na tabela do passo 6.
 
-## 4. Estimativa de horas (sessões)
+Pra cada `(repo, branch)`, ache o primeiro e o último dia com commit real
+(min/max). Isso é o "intervalo da tarefa".
 
-Por grupo, ordene os commits do dia. Quebre em sessões sempre que o gap entre
-dois commits consecutivos passar de `defaults.gapMinutes`. Duração de cada
-sessão = `(timestamp do último commit − timestamp do primeiro)` + `defaults.warmupMinutes`
-somado uma vez no início da sessão (compensa o tempo de trabalho antes do
-primeiro commit). Some as sessões do grupo, arredonde pra 0,25h.
+## 4. Resolução da atividade (match por título)
 
-Isso é **estimativa de partida** — o usuário edita os números no passo 6.
-
-## 5. Resolução da atividade (match por título)
-
-Para cada grupo (repo já resolve `organizationId`/`accountId`/`folderId` via config):
+Uma vez por `(repo, branch)` — não recalcule por dia — (repo já resolve
+`organizationId`/`accountId`/`folderId` via config):
 ```
 python3 artia.py --org <organizationId> activities --folder <folderId> --account <accountId> --mine
 ```
@@ -101,7 +96,34 @@ Normalize (minúsculas, sem acento) o nome da branch (sem prefixo `feat/`,
 trocando `-`/`_` por espaço) e os assuntos dos commits do grupo. Compare por
 overlap de tokens contra `title` de cada atividade retornada. Guarde as top-3
 por score — não decida sozinho quando o placar for ambíguo (top-1 e top-2
-muito próximos): deixe as 3 visíveis na tabela pro usuário escolher.
+muito próximos): deixe as 3 visíveis na tabela pro usuário escolher. Todos os
+dias que essa branch acabar preenchendo (passo 5) herdam essa mesma escolha.
+
+## 5. Preenchendo o calendário (dia cheio, não sessão)
+
+O usuário sempre aponta o dia inteiro (`defaults.dailyHours`, padrão 8h) numa
+tarefa — não estima por intervalo entre commits. Pra cada dia **útil**
+(segunda a sexta) dentro do período pedido:
+
+1. Liste quais `(repo, branch)` tiveram commit **real** nesse dia.
+2. **1 branch** com commit real → dia inteiro (`dailyHours`) pra ela, começando
+   em `defaults.morningStart`.
+3. **2 branches** com commit real no mesmo dia → a primeira por ordem
+   cronológica do commit leva a manhã (`morningStart`, metade de `dailyHours`),
+   a segunda leva a tarde (`afternoonStart`, a outra metade).
+4. **3+ branches** no mesmo dia (raro) → divide `dailyHours` igualmente entre
+   elas, em blocos sequenciais a partir de `morningStart`.
+5. **Nenhum commit real** nesse dia, mas ele cai **entre** o primeiro e o
+   último dia de commit de uma única branch, e nenhuma outra branch tem
+   commit nesse intervalo → preenche esse dia com a mesma branch, dia
+   inteiro. É o caso "commitei segunda, só commitei de novo quinta, mas
+   trabalhei terça e quarta na mesma tarefa".
+6. Não se encaixa em nada acima (fim de semana, fora do intervalo de
+   qualquer branch, ou gap ambíguo — duas branches diferentes cercando o
+   buraco, sem como saber qual continuou) → **não** propõe nada nesse dia.
+   Ambiguidade não se resolve advinhando.
+
+Isso é **estimativa de partida** — o usuário edita os números no passo 6.
 
 ## 6. Dedupe + tabela de proposta
 
@@ -119,9 +141,13 @@ novo a menos que o usuário peça explicitamente.
 
 Monte e mostre uma tabela markdown:
 
-| data | repo/branch | atividade (top-3 candidatas) | horas estimadas | observação | status |
-|---|---|---|---|---|---|
-| 2026-07-22 | meu-repo / feat/tarefa21-... | **29153781 — Título da atividade (Tarefa 21)** / 29153782 / 29153790 | 3.5 | feat: resumo do que foi commitado... | novo |
+| data | repo/branch | atividade (top-3 candidatas) | início | horas | observação | status |
+|---|---|---|---|---|---|---|
+| 2026-07-22 | meu-repo / feat/tarefa21-... | **29153781 — Título da atividade (Tarefa 21)** / 29153782 / 29153790 | 09:00 | 8 | feat: resumo do que foi commitado... | novo |
+| 2026-07-23 | meu-repo / feat/tarefa21-... | (mesma de cima, dia sem commit — preenchido, ver passo 5.5) | 09:00 | 8 | — | novo |
+
+Quando o dia foi dividido manhã/tarde entre 2 branches, isso vira **2 linhas**
+pro mesmo dia, cada uma com sua atividade, `início` e `horas` (4h cada).
 
 ## 7. Edição + confirmação
 
@@ -140,10 +166,13 @@ postar", "confirma", etc). Em modo `--dry-run`, pare aqui.
 Por linha confirmada:
 ```
 python3 artia.py --org <organizationId> create-entry --account <accountId> --activity <activityId> \
-  --date <data> --start <defaults.startTime> --duration <horas> \
+  --date <data> --start <início da linha> --duration <horas da linha> \
   --status <defaults.timeEntryStatusId> --by <createdBy> --kind normal \
   --obs "<observação>" --yes
 ```
+`início` e `horas` vêm da linha da tabela (passo 5): dia inteiro usa
+`morningStart`/`dailyHours`; linha de manhã usa `morningStart`/metade; linha
+de tarde usa `afternoonStart`/metade.
 Reporte os `id` criados numa lista curta. Se algum `timeEntryStatusId` da
 config estiver incorreto pro fluxo real do usuário (API rejeitar), pare,
 mostre a mensagem de erro decisiva (não o JSON inteiro) e peça o id certo —
